@@ -10,7 +10,7 @@ from pathlib import Path
 from cc_decrypter.decoder import parse_bdve_footer
 
 
-VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".aac", ".m4a", ".mp3", ".wav", ".mkv"}
 PROBE_TAIL_BYTES = 1024 * 1024
 MIN_BDVE_FILE_SIZE = 68
 UNSAFE_NAME_CHARS = re.compile(r'[\\/:*?"<>|]')
@@ -122,7 +122,11 @@ def probe_cryptor_type(path: Path) -> int | None:
                 # Content already starts with a plain ftyp box, so the engine
                 # cannot decrypt it even when a footer is still attached.
                 return None
-            handle.seek(-min(size, PROBE_TAIL_BYTES), os.SEEK_END)
+            handle.seek(-4, os.SEEK_END)
+            footer_size = int.from_bytes(handle.read(4), "big")
+            if not 16 <= footer_size <= min(size, PROBE_TAIL_BYTES):
+                return None
+            handle.seek(-max(68, footer_size), os.SEEK_END)
             tail = handle.read()
     except OSError:
         return None
@@ -170,9 +174,14 @@ def export_base_name(video: DraftVideo) -> str:
     return f"{project}_{stem}_decoded" if project else f"{stem}_decoded"
 
 
+def export_suffix(video: DraftVideo) -> str:
+    suffix = video.path.suffix.lower()
+    return suffix if suffix in {".aac", ".m4a", ".mp3", ".wav"} else ".mp4"
+
+
 def existing_export(video: DraftVideo, output_dir: Path) -> Path | None:
     """The decrypted copy already sitting in the output folder, if there is one."""
-    candidate = output_dir / f"{export_base_name(video)}.mp4"
+    candidate = output_dir / f"{export_base_name(video)}{export_suffix(video)}"
     return candidate if candidate.exists() else None
 
 
@@ -182,10 +191,10 @@ def output_path_for(video: DraftVideo, output_dir: Path, taken: set[str] | None 
 
     base = export_base_name(video)
 
-    candidate = output_dir / f"{base}.mp4"
+    candidate = output_dir / f"{base}{export_suffix(video)}"
     counter = 2
     while str(candidate) in taken or candidate.exists():
-        candidate = output_dir / f"{base} ({counter}).mp4"
+        candidate = output_dir / f"{base} ({counter}){export_suffix(video)}"
         counter += 1
 
     taken.add(str(candidate))

@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache/
 .venv/
+venv/
 .DS_Store
 build/
 dist/
@@ -13,15 +14,25 @@ release/
 *.m4v
 *.avi
 *.mkv
+*.aac
+*.m4a
+*.mp3
+*.wav
+Exportaciones/
 *.jpg
 *.jpeg
-*.png
 *.ass
 *.html
-*.log
+logs/
 packet_variant_tests/
 capcut_decode_gui.py
 rebuild_capcut_compound.py
+
+# Keep project images
+!Título.png
+!assets/*.ico
+!assets/*.icns
+!src/cc_decrypter/icon.png
 
 # Local Codex/agent working notes. Keep this private.
 agent.md

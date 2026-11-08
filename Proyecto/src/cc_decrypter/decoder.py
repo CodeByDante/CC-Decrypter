@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import mmap
+import os
+import tempfile
+import re
+from itertools import chain, islice
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable
@@ -11,6 +17,12 @@ BDVE_DEFAULT_LENGTH = 311_610
 BDVE_KNOWN_PROFILES = (
     (BDVE_DEFAULT_STEP, BDVE_DEFAULT_LENGTH),
     (102_303, 89_230),
+    (819_183, 153_631),
+    (144_241, 2_142),
+    (808_940, 118_714),
+    (488_065, 132_216),
+    (717_098, 320_207),
+    (766_386, 699_732),
 )
 MAX_DISCOVERY_STEP = 5_000_000
 
@@ -60,7 +72,7 @@ class Box:
 
 
 def xor_bytes(data: bytes, key: int) -> bytes:
-    return bytes(byte ^ key for byte in data)
+    return data.translate(bytes(value ^ key for value in range(256)))
 
 
 def param_sha256(step: int, length: int, key: int) -> bytes:
@@ -285,6 +297,19 @@ def parse_video_samples_from_moov(data: bytes, moov: Box) -> list[Sample] | None
         stsz = find_child(data, stbl, b"stsz")
         stsc = find_child(data, stbl, b"stsc")
         stco = find_child(data, stbl, b"stco") or find_child(data, stbl, b"co64")
+        if stco is None and stsz is not None and stsc is not None:
+            for cand_key in set([data[0], 0xEF]):
+                marker = bytes(b ^ cand_key for b in b"stco")
+                pos = data.find(marker, stbl.content_start, stbl.end)
+                if pos > 4:
+                    bsize = int.from_bytes(bytes(b ^ cand_key for b in data[pos-4:pos]), "big")
+                    if 8 <= bsize <= len(data) - pos + 4:
+                        dchunk = bytes(b ^ cand_key for b in data[pos-4 : pos-4+bsize])
+                        dstco = Box(0, bsize, b"stco", 8)
+                        sizes = parse_stsz(data, stsz)
+                        stsc_entries = parse_stsc(data, stsc)
+                        chunk_offsets = parse_chunk_offsets(dchunk, dstco)
+                        return build_samples(sizes, stsc_entries, chunk_offsets)
         if stsz is None or stsc is None or stco is None:
             continue
 
@@ -357,15 +382,99 @@ def score_h264_sample(sample: bytes) -> int:
     return score
 
 
+_verified_profiles: dict[bytes, CryptorParams] = {}
+
+
+def discover_adts_params(payload, key, digest, *, split_headers=False):
+    """Bracket XOR transitions using consecutive AAC frame sync bytes."""
+    starts = []
+    ends = []
+    pos = previous = 0
+    encrypted = True
+    previous_size = None
+    while pos + 7 <= len(payload) and len(starts) < 24:
+        if payload[pos] not in (255, 255 ^ key):
+            break
+        mask = key if payload[pos] ^ key == 255 else 0
+        raw = payload[pos:pos + 7]
+        sizes = []
+        # An XOR boundary may pass through the header, including its size field.
+        for split in (range(7, 0, -1) if split_headers else (7,)):
+            header = bytes(b ^ (mask if i < split else mask ^ key) for i, b in enumerate(raw))
+            if header[1] & 0xF6 != 0xF0:
+                continue
+            size = ((header[3] & 3) << 11) | (header[4] << 3) | (header[5] >> 5)
+            end = pos + size
+            if size >= 7 and (end == len(payload) or
+                              (end + 7 <= len(payload) and payload[end] in (255, 255 ^ key))):
+                sizes.append(size)
+                if size == previous_size or (split == 7 and previous_size is None):
+                    break
+        if not sizes:
+            break
+        size = min(sizes, key=lambda value: abs(value - previous_size)) if previous_size else sizes[0]
+        previous_size = size
+        if bool(mask) != encrypted:
+            (starts if mask else ends).append((previous + 1, pos))
+            encrypted = bool(mask)
+        previous, pos = pos, pos + size
+
+    if not starts or not ends:
+        return None
+    # The nth start is n*step; the nth end is n*step+length.
+    lower = max((lo + n - 1) // n for n, (lo, hi) in enumerate(starts, 1))
+    upper = min(hi // n for n, (lo, hi) in enumerate(starts, 1))
+    for step in range(lower, min(MAX_DISCOVERY_STEP, upper) + 1):
+        low = max(1, max(lo - n * step for n, (lo, hi) in enumerate(ends)))
+        high = min(step, min(hi - n * step for n, (lo, hi) in enumerate(ends)))
+        for length in range(low, high + 1):
+            if param_sha256(step, length, key) == digest:
+                return CryptorParams(step, length, key)
+    return None
+
+
 def discover_bdve_params(data: bytes, key: int, footer: BdveFooter, log: LogFn) -> CryptorParams:
-    known = tuple(
-        CryptorParams(step, length, candidate_key)
-        for step, length in BDVE_KNOWN_PROFILES
-        for candidate_key in (key, data[0])
-    )
-    for params in known:
-        if param_sha256(params.step, params.length, params.key) == footer.sha256:
-            return params
+    # The audio sync byte is 0xff. For MP4 the first size byte is usually zero.
+    for step, length in BDVE_KNOWN_PROFILES:
+        for candidate_key in (key, key ^ 255):
+            if param_sha256(step, length, candidate_key) == footer.sha256:
+                return CryptorParams(step, length, candidate_key)
+
+    cached = _verified_profiles.get(footer.sha256)
+    if cached is not None:
+        return cached
+
+    audio_key = key ^ 255
+    if footer.start >= 7 and (data[1] ^ audio_key) & 0xF6 == 0xF0:
+        audio = data[:footer.start]
+        for split_headers in (False, True):
+            params = discover_adts_params(audio, audio_key, footer.sha256, split_headers=split_headers)
+            if params:
+                _verified_profiles[footer.sha256] = params
+                return params
+
+    # Padding and sample tables often straddle an XOR boundary. A run of
+    # encoded zeroes followed by literal zeroes ends at n * step + length.
+    # The opposite transition starts at n * step. Only accept a footer hash match.
+    if key:
+        zero = bytes(8)
+        encoded = bytes([key]) * 8
+        starts = re.finditer(re.escape(zero + encoded), data)
+        ends = [m.start() + 8 for m in islice(re.finditer(re.escape(encoded + zero), data), 64)]
+        for match in islice(starts, 64):
+            boundary = match.start() + 8
+            for divisor in range(1, math.isqrt(boundary) + 1):
+                if boundary % divisor:
+                    continue
+                for step in (divisor, boundary // divisor):
+                    if step > MAX_DISCOVERY_STEP:
+                        continue
+                    for end in ends:
+                        length = end % step
+                        if length and param_sha256(step, length, key) == footer.sha256:
+                            params = CryptorParams(step, length, key)
+                            _verified_profiles[footer.sha256] = params
+                            return params
 
     observations: list[tuple[int, bool]] = [(0, True), (4, True), (32, True)]
     for marker in (b"ftyp", b"mdat", b"moov"):
@@ -378,6 +487,11 @@ def discover_bdve_params(data: bytes, key: int, footer: BdveFooter, log: LogFn) 
             observations.append((raw_pos, False))
 
     payload = data[: footer.start]
+
+    # Para archivos de audio (AAC/ADTS u otros sin moov/ftyp)
+    if not (b"moov" in payload or b"ftyp" in payload or xor_bytes(b"moov", key) in payload or xor_bytes(b"ftyp", key) in payload):
+        raise DecodeError("Perfil de audio desconocido. No se pudo verificar el descifrado.")
+
     full_xor_payload = xor_bytes(payload, key)
     try:
         samples = parse_video_samples(full_xor_payload)
@@ -385,18 +499,37 @@ def discover_bdve_params(data: bytes, key: int, footer: BdveFooter, log: LogFn) 
         samples = parse_video_samples(payload)
     log(f"parsed {len(samples):,} video samples for parameter discovery")
 
-    for sample in samples[:260]:
+    for sample in samples:
         if sample.pos < 0 or sample.size <= 0 or sample.pos + sample.size > footer.start:
             continue
 
-        raw_chunk = data[sample.pos : sample.pos + sample.size]
+        raw_chunk = data[sample.pos : sample.pos + min(sample.size, 64)]
         xor_chunk = xor_bytes(raw_chunk, key)
         raw_score = score_h264_sample(raw_chunk)
         xor_score = score_h264_sample(xor_chunk)
-        observations.append((sample.pos, xor_score >= raw_score))
+        if xor_score != raw_score:
+            observations.append((sample.pos, xor_score > raw_score))
 
     target = footer.sha256
-    for step in range(1, MAX_DISCOVERY_STEP + 1):
+    ordered = sorted(set(observations))
+    wraps = [(a[0], b[0]) for a, b in zip(ordered, ordered[1:]) if not a[1] and b[1]]
+    if not any(not encrypted for _, encrypted in ordered):
+        raise DecodeError("No hay muestras sin cifrar para identificar el perfil BDVE.")
+    if wraps:
+        first_plain, first_encrypted = wraps[0]
+        upper = min(MAX_DISCOVERY_STEP, first_encrypted)
+        split = min(first_plain, upper)
+        ranges = (range(split + 1, upper + 1), range(1, split + 1))
+    else:
+        ranges = (range(1, MAX_DISCOVERY_STEP + 1),)
+    first_wraps = wraps[:3]
+    key_byte = bytes([key])
+    attempts = 0
+    for step in chain.from_iterable(ranges):
+        if step % 100000 == 0:
+            log(f"Buscando el perfil BDVE: paso {step:,}")
+        if any(a // step == b // step for a, b in first_wraps):
+            continue
         low = 1
         high = step
         for pos, encrypted in observations:
@@ -413,24 +546,28 @@ def discover_bdve_params(data: bytes, key: int, footer: BdveFooter, log: LogFn) 
 
         step_bytes = step.to_bytes(4, "big")
         for length in range(low, high + 1):
-            if hashlib.sha256(step_bytes + length.to_bytes(4, "big") + bytes([key])).digest() == target:
-                return CryptorParams(step, length, key)
+            attempts += 1
+            if attempts % 1000000 == 0:
+                log(f"Verificando el perfil BDVE: {attempts:,} combinaciones")
+            if hashlib.sha256(step_bytes + length.to_bytes(4, "big") + key_byte).digest() == target:
+                params = CryptorParams(step, length, key)
+                _verified_profiles[target] = params
+                return params
 
     raise DecodeError("Could not derive BDVE cryptor parameters from this file.")
 
 
-def decode_bytes(data: bytes, log: LogFn | None = None) -> tuple[bytes, CryptorParams]:
-    logger = log or (lambda message: None)
-    if not data:
-        raise DecodeError("Input file is empty.")
-
+def _parameters(data, logger):
     key = data[0]
     footer = parse_bdve_footer(data)
     if footer is None:
         raise DecodeError("No BDVE cryptor footer was found.")
+    if footer.start <= 0:
+        raise DecodeError("El archivo no contiene datos de audio o video.")
     if footer.cryptor_type != 1:
         raise DecodeError(f"Unsupported BDVE cryptor type: {footer.cryptor_type}")
 
+    logger("Identificando el perfil de cifrado…")
     params = discover_bdve_params(data, key, footer, logger)
     logger(
         "BDVE exact decrypt: "
@@ -438,29 +575,54 @@ def decode_bytes(data: bytes, log: LogFn | None = None) -> tuple[bytes, CryptorP
         f"key=0x{params.key:02X}, footer={footer.size} bytes"
     )
 
+    return footer, params
+
+
+def decode_bytes(data: bytes, log: LogFn | None = None) -> tuple[bytes, CryptorParams]:
+    logger = log or (lambda message: None)
+    if not data:
+        raise DecodeError("Input file is empty.")
+
+    footer, params = _parameters(data, logger)
+
     result = bytearray(data[: footer.start])
+    xor_table = bytes(b ^ params.key for b in range(256))
     for block_start in range(0, len(result), params.step):
         block_end = min(block_start + params.length, len(result))
-        for offset in range(block_start, block_end):
-            result[offset] ^= params.key
+        chunk = result[block_start:block_end]
+        result[block_start:block_end] = chunk.translate(xor_table)
 
     return bytes(result), params
 
 
-def decode_file(input_path: Path, output_path: Path, log: LogFn | None = None) -> CryptorParams:
+def decode_file(input_path: Path, output_path: Path, log: LogFn | None = None,
+                progress: Callable[[int], None] | None = None) -> CryptorParams:
     logger = log or (lambda message: None)
-    if not input_path.exists():
-        raise FileNotFoundError(input_path)
     if input_path.resolve() == output_path.resolve():
         raise DecodeError("Output path must be different from input path.")
-
-    logger(f"reading: {input_path}")
-    data = input_path.read_bytes()
-    logger(f"input size: {len(data):,} bytes")
-    decoded, params = decode_bytes(data, logger)
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(decoded)
-    logger(f"wrote: {output_path}")
-    logger(f"output size: {output_path.stat().st_size:,} bytes")
+    with input_path.open("rb") as source:
+        if not os.fstat(source.fileno()).st_size:
+            raise DecodeError("Input file is empty.")
+        with mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            footer, params = _parameters(data, logger)
+            table = bytes(value ^ params.key for value in range(256))
+            with tempfile.NamedTemporaryFile(dir=output_path.parent, suffix=".decrypt.tmp", delete=False) as handle:
+                temp = Path(handle.name)
+            try:
+                with temp.open("wb") as output:
+                    # Each chunk contains whole periods, so its XOR phase starts at zero.
+                    chunk_size = params.step * max(1, (4 * 1024 * 1024) // params.step)
+                    for start in range(0, footer.start, chunk_size):
+                        end = min(start + chunk_size, footer.start)
+                        block = bytearray(data[start:end])
+                        for offset in range(0, len(block), params.step):
+                            span = slice(offset, offset + params.length)
+                            block[span] = block[span].translate(table)
+                        output.write(block)
+                        if progress:
+                            progress(end * 100 // footer.start)
+                os.replace(temp, output_path)
+            finally:
+                temp.unlink(missing_ok=True)
     return params

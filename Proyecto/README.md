@@ -11,8 +11,14 @@ not open in QuickTime, VLC, Premiere, or other apps. CC Decrypter finds those
 videos on your computer, turns them into normal MP4 files, and saves them in a
 folder you choose.
 
-Your original videos are never changed — CC Decrypter always creates a new
-copy.
+## Accesos de Windows
+
+- **CC Decrypter** abre la interfaz manual. Elige los archivos y exporta copias a otra carpeta.
+- **Automatizar_Desencriptado** busca archivos protegidos en los borradores y los descifra en su ubicación original una vez.
+- **Iniciar_Vigilante_Segundo_Plano** vigila esa carpeta y procesa los nuevos archivos cuando se estabilizan. 
+- **Detener_Vigilante** detiene únicamente el vigilante de este proyecto.
+
+Los dos modos automáticos usan la carpeta de borradores elegida en la interfaz manual, o la habitual de CapCut. Reemplazan cada archivo después de descifrarlo.
 
 Please only use CC Decrypter on videos you own or have permission to decrypt.
 
@@ -130,7 +136,7 @@ Store version, but a custom install can live anywhere. If a folder you picked
 before goes missing, the app says so rather than quietly scanning elsewhere.
 
 **Does CC Decrypter change my original videos?**
-No. It only reads them and writes a new, separate file.
+Manual mode exports separate copies. The two Windows automation modes replace supported protected clips in the drafts folder.
 
 **Can it convert any video?**
 No. CC Decrypter only decrypts protected draft videos it supports. It is not a

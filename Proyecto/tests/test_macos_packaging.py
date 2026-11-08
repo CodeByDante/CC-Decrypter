@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "build.yml"
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "build.yml"
 WINDOWS_INSTALLER = (
     Path(__file__).resolve().parents[1] / "installer" / "windows" / "cc-decrypter.iss"
 )

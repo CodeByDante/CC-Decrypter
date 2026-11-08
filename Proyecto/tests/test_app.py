@@ -37,7 +37,7 @@ class VersionTests(unittest.TestCase):
         )
 
     def test_the_changelog_documents_this_version(self) -> None:
-        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        changelog = (ROOT / "docs/CHANGELOG.md").read_text(encoding="utf-8")
 
         self.assertIn(f"## {cc_decrypter.__version__} — ", changelog)
 

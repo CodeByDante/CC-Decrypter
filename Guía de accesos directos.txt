@@ -1,0 +1,49 @@
+CC DECRYPTER — GUÍA DE ACCESOS DIRECTOS
+
+Para elegir un acceso, piensa dónde quieres el archivo y si quieres
+procesar los clips que ya existen o esperar a los nuevos.
+
+PROCESAR ARCHIVOS QUE YA EXISTEN
+
+CC Decrypter
+    Abre la aplicación manual. Elige los archivos que quieres descifrar
+    y la carpeta donde guardar las copias. Los originales se conservan.
+
+Automatizar_Desencriptado
+    Revisa una vez las carpetas combination de tus proyectos de CapCut.
+    Descifra cada clip compatible y REEMPLAZA el original en esa misma
+    carpeta, con el mismo nombre.
+
+Automatizar_Desencriptado_Escritorio
+    Hace una sola pasada y guarda las copias descifradas directamente en
+    tu Escritorio. Conserva los originales de CapCut. Si el nombre ya
+    existe en el Escritorio, añade un número, por ejemplo clip (2).mp4.
+
+VIGILAR ARCHIVOS NUEVOS EN SEGUNDO PLANO
+
+Los tres vigilantes detectan videos y audios compatibles que aparecen
+en combination después de activarlos. Omiten los que ya estaban allí
+y esperan a que el archivo nuevo deje de cambiar antes de descifrarlo.
+
+Iniciar_Vigilante_Segundo_Plano
+    REEMPLAZA el clip original con la versión descifrada. Por ejemplo,
+    video.mp4 sigue llamándose video.mp4 en la carpeta combination.
+
+Iniciar_Vigilante_Escritorio
+    Guarda la copia descifrada en tu Escritorio con el nombre del clip.
+    El archivo original de combination se conserva.
+
+Iniciar_Vigilante_Misma_Carpeta
+    Guarda la copia junto al original. Por ejemplo, en combination quedan
+    video.mp4 y video_descifrado.mp4. Para un audio, quedan audio.aac y
+    audio_descifrado.aac.
+
+CAMBIAR O APAGAR EL VIGILANTE
+
+Al iniciar otro vigilante, se apaga el anterior. Solo queda activo el
+último que elegiste. Puedes cerrar la ventana del acceso. Si reinicias
+la PC, el vigilante vuelve a arrancar cuando inicias sesión en Windows.
+
+Detener_Vigilante
+    Apaga todos los vigilantes y desactiva su arranque con Windows.
+    Para reanudar la vigilancia, abre el acceso del modo que prefieras.

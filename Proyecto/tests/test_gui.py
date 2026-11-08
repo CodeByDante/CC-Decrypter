@@ -117,23 +117,23 @@ class WindowTests(unittest.TestCase):
 
     def test_selecting_rows_updates_the_count_and_the_button(self) -> None:
         self.assertFalse(self.window.cta.isEnabled())
-        self.assertIn("0 of 3", self.window.counts.text())
+        self.assertIn("0 de 3", self.window.counts.text())
 
         self.select(0)
 
         self.assertTrue(self.window.cta.isEnabled())
-        self.assertEqual(self.window.cta.text(), "Decrypt 1 video")
-        self.assertIn("1 of 3", self.window.counts.text())
+        self.assertEqual(self.window.cta.text(), "Desencriptar 1 video")
+        self.assertIn("1 de 3", self.window.counts.text())
 
         self.select(1)
-        self.assertEqual(self.window.cta.text(), "Decrypt 2 videos")
+        self.assertEqual(self.window.cta.text(), "Desencriptar 2 videos")
 
     def test_the_button_is_dead_while_busy(self) -> None:
         self.select(0)
         self.window._set_busy(True)
 
         self.assertFalse(self.window.cta.isEnabled())
-        self.assertEqual(self.window.cta.text(), "Working…")
+        self.assertEqual(self.window.cta.text(), "Procesando…")
 
     # ------------------------------------------------------------- sort
 
@@ -220,7 +220,7 @@ class WindowTests(unittest.TestCase):
 
         self.assertEqual(len(self.shown), 1)
         title, message = self.shown[0]
-        self.assertIn("not found", title)
+        self.assertIn("No se encontró", title)
         self.assertIn(str(gone), message)
         self.assertIn(str(self.drafts), message)
 
@@ -230,21 +230,21 @@ class WindowTests(unittest.TestCase):
         self.window._scan_finished(make_videos(include_unsupported=True), None)
 
         self.assertEqual(self.window.list.count(), 3)
-        self.assertIn("Found 3 videos", self.window.status.text())
-        self.assertTrue(any("unsupported" in line for line in self.window.log_lines))
+        self.assertIn("Se encontraron 3 videos", self.window.status.text())
+        self.assertTrue(any("incompatible" in line for line in self.window.log_lines))
 
     def test_a_failed_scan_says_so(self) -> None:
         self.window._scan_finished(None, OSError("nope"))
 
-        self.assertIn("went wrong", self.window.status.text())
-        self.assertTrue(any("ERROR while searching" in line for line in self.window.log_lines))
+        self.assertIn("Ocurrió un error", self.window.status.text())
+        self.assertTrue(any("ERROR durante la búsqueda" in line for line in self.window.log_lines))
 
     def test_an_empty_folder_says_so(self) -> None:
         self.window._scan_finished([], None)
 
         self.assertEqual(self.window.list.count(), 0)
-        self.assertIn("No protected videos", self.window.status.text())
-        self.assertIn("Nothing to decrypt", self.window.counts.text())
+        self.assertIn("No se encontraron videos protegidos", self.window.status.text())
+        self.assertIn("Nada para desencriptar", self.window.counts.text())
 
     # -------------------------------------------------------------- log
 
@@ -269,7 +269,7 @@ class WindowTests(unittest.TestCase):
 
         self.assertEqual(self.window.progress.value(), 2)
         self.assertEqual(self.window.progress.maximum(), 5)
-        self.assertIn("3 of 5", self.window.status.text())
+        self.assertIn("3 de 5", self.window.status.text())
         self.assertIn("clip_b.mp4", self.window.status.text())
 
     def test_cancelling_asks_the_worker_to_stop(self) -> None:
@@ -277,12 +277,12 @@ class WindowTests(unittest.TestCase):
 
         self.assertTrue(self.window.cancel_requested.is_set())
         self.assertFalse(self.window.cancel_button.isEnabled())
-        self.assertIn("Finishing the current video", self.window.status.text())
+        self.assertIn("Finalizando el video actual", self.window.status.text())
 
     def test_a_cancelled_run_reports_what_it_managed(self) -> None:
         self.window._batch_finished(2, 0, 5, True)
 
-        self.assertIn("Stopped: 2 of 5", self.window.status.text())
+        self.assertIn("Detenido: 2 de 5", self.window.status.text())
         self.assertFalse(self.window.progress.isVisibleTo(self.window))
 
     def test_the_worker_stops_when_cancelled(self) -> None:
@@ -295,7 +295,7 @@ class WindowTests(unittest.TestCase):
 
         self.assertEqual(finished, [(0, 0, 3, True)])
 
-    # ---------------------------------------------------- already exported
+    # ---------------------------------------------------- ya fueron exportados
 
     def test_videos_already_in_the_output_folder_are_marked(self) -> None:
         from cc_decrypter.discovery import export_base_name
@@ -326,7 +326,7 @@ class WindowTests(unittest.TestCase):
             self.window.start_batch()
 
         self.assertEqual(started, [])
-        self.assertIn("already exported", self.window.status.text())
+        self.assertIn("ya fueron exportados", self.window.status.text())
 
     # --------------------------------------------------------- reveal
 
@@ -346,18 +346,18 @@ class WindowTests(unittest.TestCase):
             self.window._reveal_output()
 
         self.assertEqual(opened, [])
-        self.assertIn("appears when the first video", self.window.status.text())
+        self.assertIn("se creará cuando se desencripte el primer video", self.window.status.text())
 
     # -------------------------------------------------------- menus etc.
 
     def test_the_menu_offers_the_actions_with_shortcuts(self) -> None:
         actions = self.window.actions_by_name
 
-        for name in ("Rescan", "Decrypt Selected", "Select All", "View Log",
-                     "About CC Decrypter", "Open Output Folder"):
+        for name in ("Volver a escanear", "Desencriptar seleccionados", "Seleccionar todo", "Ver registro",
+                     "Acerca de CC Decrypter", "Abrir carpeta de salida"):
             self.assertIn(name, actions)
-        self.assertEqual(actions["Rescan"].shortcut().toString(), "Ctrl+R")
-        self.assertEqual(actions["View Log"].shortcut().toString(), "Ctrl+L")
+        self.assertEqual(actions["Volver a escanear"].shortcut().toString(), "Ctrl+R")
+        self.assertEqual(actions["Ver registro"].shortcut().toString(), "Ctrl+L")
 
     def test_the_window_size_is_saved_on_close(self) -> None:
         self.window.resize(820, 700)
@@ -368,12 +368,12 @@ class WindowTests(unittest.TestCase):
         self.assertEqual((width, height), (820, 700))
 
     def test_a_saved_size_is_restored(self) -> None:
-        with patch.object(self.gui, "load_window_geometry", lambda: (0, 0, 760, 640)), \
+        with patch.object(self.gui, "load_window_geometry", lambda: (0, 0, 760, 710)), \
                 patch.object(self.gui.DecrypterWindow, "start_scan", lambda self: None):
             window = self.gui.DecrypterWindow()
         self.addCleanup(window.deleteLater)
 
-        self.assertEqual((window.width(), window.height()), (760, 640))
+        self.assertEqual((window.width(), window.height()), (760, 710))
 
     # ------------------------------------------------------- update check
 
@@ -389,10 +389,10 @@ class WindowTests(unittest.TestCase):
         about = self.window.about_dialog
 
         about._show_update("99.0.0", "")
-        self.assertIn("99.0.0 is available", about.update_status.text())
+        self.assertIn("99.0.0 está disponible", about.update_status.text())
 
         about._show_update(cc_decrypter.__version__, "")
-        self.assertIn("up to date", about.update_status.text())
+        self.assertIn("versión más reciente", about.update_status.text())
 
         about._show_update("", "no network")
         self.assertIn("no network", about.update_status.text())
@@ -418,7 +418,7 @@ class WindowTests(unittest.TestCase):
         self.assertIs(self.window.about_dialog, first)
         self.assertTrue(
             any(
-                button.text().startswith("About")
+                button.text().startswith("Acerca de")
                 for button in self.window.findChildren(self.gui.QToolButton)
             )
         )

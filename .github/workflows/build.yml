@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   build:
+    defaults:
+      run:
+        working-directory: Proyecto
     name: Build ${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
 
@@ -55,6 +58,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
           cache: "pip"
+          cache-dependency-path: Proyecto/requirements.txt
 
       - name: Install python.org runtime
         if: matrix.python_source == 'pythonorg'
@@ -205,7 +209,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: release/*
+          path: Proyecto/release/*
 
   release:
     name: Create GitHub Release
