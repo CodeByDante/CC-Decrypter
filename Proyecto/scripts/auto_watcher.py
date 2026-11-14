@@ -130,10 +130,20 @@ def watch():
 def start_at_login(enabled):
     import winreg
 
+    # Older releases installed a launcher that always selected the default
+    # mode at login, overriding whichever mode the user selected last.
+    startup = QStandardPaths.writableLocation(QStandardPaths.ApplicationsLocation)
+    if startup:
+        (Path(startup) / "Startup" / "CapCut_AutoDecrypter_Background.lnk").unlink(missing_ok=True)
+
     name = "CC Decrypter - Vigilante"
     name += {"": "", "--escritorio": " Escritorio", "--misma-carpeta": " Misma Carpeta"}[MODE]
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
                           r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
+        try:
+            winreg.DeleteValue(key, "CapCut_AutoDecrypter_Watcher")
+        except FileNotFoundError:
+            pass
         if enabled:
             executable = Path(sys.executable).with_name("pythonw.exe")
             command = subprocess.list2cmdline([str(executable), str(Path(__file__).resolve()), *WATCH_ARGS])

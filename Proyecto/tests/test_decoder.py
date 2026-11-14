@@ -82,6 +82,22 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(decoded, payload)
         self.assertEqual(decoded_params, params)
 
+    def test_ignores_accidental_box_marker_inside_encrypted_payload(self) -> None:
+        params = CryptorParams(step=1000, length=41, key=0x55)
+        # These bytes become a literal "mdat" inside the encrypted ftyp box.
+        fake_marker = bytes(value ^ params.key for value in b"mdat")
+        payload = (
+            box(b"ftyp", fake_marker + b"\x00\x00\x02\x00" + b"qt  ")
+            + box(b"wide", b"")
+            + box(b"mdat", (1).to_bytes(4, "big") + b"\x65"
+                  + (1).to_bytes(4, "big") + b"\x41")
+            + sample_table_moov([36, 41], [5, 5])
+        )
+        protected = encrypt_bdve_payload(payload, params) + bdve_footer(params)
+        decoded, actual = decode_bytes(protected)
+        self.assertEqual(actual, params)
+        self.assertEqual(decoded, payload)
+
     def test_decodes_known_short_stride_bdve_profile(self) -> None:
         params = CryptorParams(step=102_303, length=89_230, key=0x65)
         payload = (

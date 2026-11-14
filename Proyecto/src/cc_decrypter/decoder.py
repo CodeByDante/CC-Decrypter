@@ -477,14 +477,10 @@ def discover_bdve_params(data: bytes, key: int, footer: BdveFooter, log: LogFn) 
                             return params
 
     observations: list[tuple[int, bool]] = [(0, True), (4, True), (32, True)]
-    for marker in (b"ftyp", b"mdat", b"moov"):
-        encrypted_marker = xor_bytes(marker, key)
-        encrypted_pos = data.find(encrypted_marker, 0, footer.start)
-        raw_pos = data.find(marker, 0, footer.start)
-        if encrypted_pos >= 0:
-            observations.append((encrypted_pos, True))
-        if raw_pos >= 0:
-            observations.append((raw_pos, False))
+    # Compressed media can contain literal box names by chance. Searching the
+    # entire payload for those names produces false encryption observations
+    # and can exclude the exact profile even when its footer hash is valid.
+    # Use sample-table offsets below instead of unvalidated marker matches.
 
     payload = data[: footer.start]
 
